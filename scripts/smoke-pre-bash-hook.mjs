@@ -17,6 +17,8 @@
  *   - innocuous command → exit 0 + `[OK] Command validated`
  *   - empty payload    → exit 0 (no crash, no false positive)
  *   - non-string command field → exit 0 (defensive String() wrap holds)
+ *   - Cursor preToolUse payload → JSON permission allow/deny (Cursor
+ *     fail-closes on non-JSON). Claude Code payloads stay on the text verdict.
  *
  * Runs against BOTH copies of the handler in the repo:
  *   1. v3/@claude-flow/cli/.claude/helpers/hook-handler.cjs  (the published template)
@@ -84,6 +86,18 @@ const cases = [
     input: { tool_name: 'Bash', tool_input: { command: 'format c: /q /y' } },
     expectExit: 1,
     expectStderrIncludes: '[BLOCKED]',
+  },
+  {
+    name: 'Cursor preToolUse innocuous → JSON allow',
+    input: { hook_event_name: 'preToolUse', tool_name: 'Shell', tool_input: { command: 'ls -la' }, cursor_version: 'test' },
+    expectExit: 0,
+    expectStdoutIncludes: '"permission":"allow"',
+  },
+  {
+    name: 'Cursor preToolUse dangerous → JSON deny',
+    input: { hook_event_name: 'preToolUse', tool_name: 'Shell', tool_input: { command: 'rm -rf / --no-preserve-root' }, cursor_version: 'test' },
+    expectExit: 2,
+    expectStdoutIncludes: '"permission":"deny"',
   },
 ];
 
