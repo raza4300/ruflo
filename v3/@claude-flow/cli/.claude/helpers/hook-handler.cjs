@@ -155,13 +155,37 @@ const handlers = {
     // (silently exiting 0 and letting the dangerous command through).
     const cmd = String(hookInput.command || toolInput.command || prompt || '').toLowerCase();
     const dangerous = ['rm -rf /', 'format c:', 'del /s /q c:\\', ':(){:|:&};:'];
-    for (const d of dangerous) {
-      if (cmd.includes(d)) {
-        console.error(`[BLOCKED] Dangerous command detected: ${d}`);
-        process.exit(1);
+    // Cursor fail-closes when a permission hook prints non-JSON. Claude Code
+    // payloads use hook_event_name "PreToolUse" and keep the text verdict.
+    const hookEvent = String(hookInput.hook_event_name || '');
+    const cursorHost = !!process.env.CURSOR_AGENT || !!hookInput.cursor_version
+      || hookEvent === 'preToolUse' || hookEvent === 'beforeShellExecution';
+    const emit = (decision, reason) => {
+      console.log(JSON.stringify({
+        permission: decision,
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: decision,
+          permissionDecisionReason: reason
+        }
+      }));
+    };
+    const allow = () => {
+      if (cursorHost) emit('allow', 'Command validated');
+      else console.log('[OK] Command validated');
+    };
+    const deny = (pattern) => {
+      if (cursorHost) {
+        emit('deny', 'Dangerous command detected: ' + pattern);
+        process.exit(2);
       }
+      console.error(`[BLOCKED] Dangerous command detected: ${pattern}`);
+      process.exit(1);
+    };
+    for (const d of dangerous) {
+      if (cmd.includes(d)) deny(d);
     }
-    console.log('[OK] Command validated');
+    allow();
   },
 
   'post-edit': () => {

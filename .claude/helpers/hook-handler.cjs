@@ -136,13 +136,39 @@ const handlers = {
     // can no longer throw a TypeError that the global try/catch would swallow.
     var cmd = String(hookInput.command || toolInput.command || prompt || '').toLowerCase();
     var dangerous = ['rm -rf /', 'format c:', 'del /s /q c:\\', ':(){:|:&};:'];
+    // Cursor fail-closes when a permission hook prints non-JSON. Claude Code
+    // payloads use hook_event_name "PreToolUse" and keep the text verdict.
+    var hookEvent = String(hookInput.hook_event_name || '');
+    var cursorHost = !!process.env.CURSOR_AGENT || !!hookInput.cursor_version
+      || hookEvent === 'preToolUse' || hookEvent === 'beforeShellExecution';
+    function emit(decision, reason) {
+      console.log(JSON.stringify({
+        permission: decision,
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: decision,
+          permissionDecisionReason: reason
+        }
+      }));
+    }
+    function allow() {
+      if (cursorHost) emit('allow', 'Command validated');
+      else console.log('[OK] Command validated');
+    }
+    function deny(pattern) {
+      if (cursorHost) {
+        emit('deny', 'Dangerous command detected: ' + pattern);
+        process.exit(2);
+      }
+      console.error('[BLOCKED] Dangerous command detected: ' + pattern);
+      process.exit(1);
+    }
     for (var i = 0; i < dangerous.length; i++) {
       if (cmd.includes(dangerous[i])) {
-        console.error('[BLOCKED] Dangerous command detected: ' + dangerous[i]);
-        process.exit(1);
+        deny(dangerous[i]);
       }
     }
-    console.log('[OK] Command validated');
+    allow();
   },
 
   'post-edit': () => {
